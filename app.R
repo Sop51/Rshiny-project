@@ -8,20 +8,28 @@ library(shiny)
 library(bslib)
 library(ggplot2)
 library(colourpicker) 
+library(dplyr)
+library(tidyr)
 
-# Define UI for application that draws a histogram
+# define the ui for the application
 ui <- fluidPage(
-  titlePanel(""),
-  sidebarLayout(
-    sidebarPanel(
-    ),
-    mainPanel(
-      tabsetPanel(
-        tabPanel("Table",
-                 tableOutput("table")
-        ),
-        tabPanel("Volcano Plot",
-                 plotOutput("volcano")
+  tabsetPanel(
+    sidebarLayout(
+      sidebarPanel(
+        fileInput(inputId = "uploadedSampleFile", label = "Upload a CSV file containing sample information:")
+      ),
+      mainPanel(
+        tabsetPanel(
+          tabPanel("Samples",
+                   tabsetPanel(
+                     tabPanel("Summary", 
+                              tableOutput("sampleTable")),
+                     tabPanel("Table", "Content for Subtab 1.2"),
+                     tabPanel("Plots", "Content for Subtab 1.3")
+                   )
+          ),
+          tabPanel("Counts", "content"),
+          tabPanel("DE", "content")
         )
       )
     )
@@ -32,67 +40,56 @@ ui <- fluidPage(
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
   
-  #' load_Data
-  #'
-  #' @details Okay this one is a little weird but bear with me here. This is 
-  #' still a "function", but it will take no arguments. The `reactive({})` bit 
-  #' says "if any of my inputs (as in, input$...) are changed, run me again". 
-  #' This is useful when a user clicks a new button or loads a new file. In 
-  #' our case, look for the uploaded file's datapath argument and load it with 
-  #' read.csv. Return this data frame in the normal return() style.
-  load_data <- reactive({
+  # define a function that reads in the sample data
+  load_sample_data <- reactive({
+    req(input$uploadedSampleFile)
+    df <- read.table(input$uploadedSampleFile$datapath, header = TRUE, sep = "\t")
+    # Identify the columns to convert to numeric (exclude 'Sample')
+    numeric_columns <- setdiff(names(df), "sample_ID")
+    # Convert selected columns to numeric
+    df[numeric_columns] <- apply(df[numeric_columns], 2, function(x) as.numeric(as.character(x)))
+    return(df)
   })
   
-  #' Volcano plot
-  #'
-  #' @param dataf The loaded data frame.
-  #' @param x_name The column name to plot on the x-axis
-  #' @param y_name The column name to plot on the y-axis
-  #' @param slider A negative integer value representing the magnitude of
-  #' p-adjusted values to color. Most of our data will be between -1 and -300.
-  #' @param color1 One of the colors for the points.
-  #' @param color2 The other colors for the points. Hexadecimal strings: "#CDC4B5"
-  #'
-  #' @return A ggplot object of a volcano plot
-  #' @details I bet you're tired of these plots by now. Me too, don't worry.
-  #' This is _just_ a normal function. No reactivity, no bells, no whistles. 
-  #' Write a normal volcano plot using geom_point, and integrate all the above 
-  #' values into it as shown in the example app. The testing script will treat 
-  #' this as a normal function.
-  #' 
-  #' !!sym() may be required to access column names in ggplot aes().
-  #'
-  #' @examples volcano_plot(df, "log2fc", "padj", -100, "blue", "taupe")
+  #create a function that returns the summary table
+  summary_table <-
+    function(data) {
+      # Extract group information from the sample ID
+      data <- data %>%
+        mutate(Condition = ifelse(grepl("^H", sample_ID), "H", "C"))
+      
+      # Create a summary data frame for each column
+      summary_data <- data %>%
+        gather(key = "Column", value = "Value", -sample_ID, -Condition) %>%
+        group_by(Column, Condition) %>%
+        summarise(
+          DataType = class(Value),
+          'Mean (sd)' = switch(
+            class(Value),
+            "numeric" = ifelse(all(is.na(Value)), NA,
+                               paste0(format(mean(as.numeric(Value), na.rm = TRUE), digits = 2),
+                                      " (", format(sd(as.numeric(Value), na.rm = TRUE), digits = 2), ")")),
+            NA
+          )
+        )
+      return(summary_data)
+    }
+  
+  # create a function that returns a volcano plot
   volcano_plot <-
     function(dataf, x_name, y_name, slider, color1, color2) {
     }
   
-  #' Draw and filter table
-  #'
-  #' @param dataf Data frame loaded by load_data()
-  #' @param slider Negative number, typically from the slider input.
-  #'
-  #' @return Data frame filtered to p-adjusted values that are less than 
-  #' 1 * 10^slider, columns for p-value and p-adjusted value have more digits 
-  #' displayed.
-  #' @details Same as above, this function is a standard R function. Tests will 
-  #' evaluate it normally. Not only does this function filter the data frame to 
-  #' rows that are above the slider magnitude, it should also change the format 
-  #' of the p-value columns to display more digits. This is so that it looks 
-  #' better when displayed on the web page. I would suggest the function 
-  #' `formatC()`
-  #'
-  #' @examples draw_table(deseq_df, -210)
-  #'    X  baseMean     log2FC     lfcSE      stat       pvalue         padj
-  #'gene1 11690.780   9.852926 0.2644650  37.25607 8.45125e-304 1.54472e-299
-  #'gene2  3550.435  -6.183714 0.1792708 -34.49369 9.97262e-261 9.11398e-257
+
   draw_table <- function(dataf, slider) {
   }
   
   output$volcano <- renderPlot({
   })
   
-  output$table <- renderTable({
+  output$sampleTable <- renderTable({
+    dataf <- load_sample_data()
+    summary_table(dataf)
   })
 }
 
