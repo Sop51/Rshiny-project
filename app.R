@@ -21,7 +21,9 @@ ui <- fluidPage(
     sidebarLayout(
       sidebarPanel(
         fileInput(inputId = "uploadedSampleFile", label = "Upload a file containing sample information:"),
-        fileInput(inputId = "uploadedCountsFile", label = "Upload a file containing counts information:")
+        fileInput(inputId = "uploadedCountsFile", label = "Upload a file containing counts information:"),
+        sliderInput("varianceSlider", "Variance Percentile Threshold", min = 0, max = 100, value = 50),
+        sliderInput("nonzeroSlider", "Min Non-Zero Samples", min = 0, max = 100, value = 10)
       ),
       mainPanel(
         tabsetPanel(
@@ -43,8 +45,6 @@ ui <- fluidPage(
           tabPanel("Counts",
                    tabsetPanel(
                      tabPanel("Filter Information",
-                              sliderInput("varianceSlider", "Variance Percentile Threshold", min = 0, max = 100, value = 50),
-                              sliderInput("nonzeroSlider", "Min Non-Zero Samples", min = 0, max = 5000, value = 10),
                               tableOutput("countsFilteredTable")),
                      tabPanel("Diagnostic Plot"),
                      tabPanel("Heatmap"),
@@ -81,6 +81,7 @@ server <- function(input, output, session) {
     req(input$uploadedSampleFile)
     # read in the sample data
     df <- read.table(input$uploadedCountsFile$datapath, header = TRUE, sep = "\t")
+    # rename the gene column
     df <- df %>%
       rename("X" = "gene")
     # define the samples to extract 
@@ -109,6 +110,7 @@ server <- function(input, output, session) {
       "C_0005", "C_0006", "C_0008",
       "C_0009", "C_0010", "C_0011"
     )
+    # selected the required samples
     selected_df <- df %>% select(one_of(samples))
     return(selected_df)
   })
@@ -178,8 +180,17 @@ server <- function(input, output, session) {
     non_zero_samples <- apply(data[-1] != 0, 1, sum, na.rm = TRUE)
     # filter genes based on criteria
     selected_genes <- which(gene_var >= var_threshold & non_zero_samples >= min_nonzero_samples)
-    # return the filtered data
-    return(data[selected_genes, , drop = FALSE])
+    # create a summary table
+    summary_table <- data.frame(
+      "Number of Samples" = ncol(data) - 1,  # subtract 1 for the gene column
+      "Total Number of Genes" = nrow(data),
+      "Number of Genes Passing Filter" = length(selected_genes),
+      "Percentage of Genes Passing Filter" = (length(selected_genes) / nrow(data)) * 100,
+      "Number of Genes Not Passing Filter" = nrow(data) - length(selected_genes),
+      "Percentage of Genes Not Passing Filter" = ((nrow(data) - length(selected_genes)) / nrow(data)) * 100
+    )
+    # return the summary table
+    return(summary_table)
   }
   
   # THESE ARE THE RENDER OUTPUT FUNCTIONS #
