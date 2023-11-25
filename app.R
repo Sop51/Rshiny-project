@@ -46,7 +46,9 @@ ui <- fluidPage(
                    tabsetPanel(
                      tabPanel("Filter Information",
                               tableOutput("countsFilteredTable")),
-                     tabPanel("Diagnostic Plot"),
+                     tabPanel("Diagnostic Plot",
+                              plotOutput("varDiagPlot"),
+                              plotOutput("zeroDiagPlot")),
                      tabPanel("Heatmap"),
                      tabPanel("PCA")
                    )),
@@ -193,6 +195,54 @@ server <- function(input, output, session) {
     return(summary_table)
   }
   
+  ### define a function that creates a diagnostic plot for zero filter ###
+  create_zeros_plot <- function(filtered_data, min_nonzero_samples) {
+    # calculate median count
+    median_count <- apply(filtered_data[-1], 1, median, na.rm = TRUE)
+    # calculate the number of non-zero samples for each gene
+    non_zero_samples <- apply(filtered_data[-1] != 0, 1, sum, na.rm = TRUE)
+    # filter genes based on the minimum number of non-zero samples
+    selected_genes <- which(non_zero_samples >= min_nonzero_samples)
+    # create a data frame for the plot
+    plot_data <- data.frame(
+      MedianCount = median_count[selected_genes],
+      Zeros = apply(filtered_data[selected_genes, -1] == 0, 1, sum, na.rm = TRUE),
+      stringsAsFactors = FALSE
+    )
+    # create the scatter plot
+    plot_zeros <- ggplot(plot_data, aes(x = Zeros, y = log(MedianCount))) +
+      geom_point() +
+      labs(title = "Median Count vs Number of Zeros",
+           x = "Number of Zeros",
+           y = "Log(Median Count)")
+    # return the plot
+    return(plot_zeros)
+  }
+  
+  ### define a function that creates a diagnostic plot for variance filter ###
+  create_variance_plot <- function(filtered_data, min_variance_percentile) {
+    # calculate median count
+    median_count <- apply(filtered_data[-1], 1, median, na.rm = TRUE)
+    # calculate the threshold based on the minimum percentile of variance
+    variance_threshold <- quantile(apply(filtered_data[-1], 1, var, na.rm = TRUE), min_variance_percentile / 100, na.rm = TRUE)
+    # filter genes based on the minimum percentile of variance
+    selected_genes <- which(apply(filtered_data[-1], 1, var, na.rm = TRUE) >= variance_threshold)
+    # create a data frame for the plot
+    plot_data <- data.frame(
+      MedianCount = median_count[selected_genes],
+      Variance = apply(filtered_data[selected_genes, -1], 1, var, na.rm = TRUE),
+      stringsAsFactors = FALSE
+    )
+    # create the scatter plot
+    plot_variance <- ggplot(plot_data, aes(x = log(Variance), y = log(MedianCount))) +
+      geom_point() +
+      labs(title = "Median Count vs Variance",
+           x = "Log(Variance)",
+           y = "Log(Median Count)")
+    # return the plot
+    return(plot_variance)
+  }
+  
   # THESE ARE THE RENDER OUTPUT FUNCTIONS #
   output$sampleTable <- renderTable({
     dataf <- load_sample_data()
@@ -241,6 +291,15 @@ server <- function(input, output, session) {
     filter_genes(dataf, input$varianceSlider, input$nonzeroSlider)
   })
   
+  output$varDiagPlot <- renderPlot({
+    dataf <- load_count_data()
+    create_variance_plot(dataf, input$varianceSlider)
+  })
+  
+  output$zeroDiagPlot <- renderPlot({
+    dataf <- load_count_data()
+    create_zeros_plot(dataf, input$nonzeroSlider)
+  })
 }
 # Run the application
 shinyApp(ui = ui, server = server)
