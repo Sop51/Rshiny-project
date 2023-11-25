@@ -7,10 +7,12 @@
 library(shiny)
 library(bslib)
 library(ggplot2)
+library(gplots)
 library(colourpicker) 
 library(dplyr)
 library(tidyr)
 library(DESeq2)
+library(pheatmap)
 
 # increase the shiny upload size option for the counts data
 options(shiny.maxRequestSize=30*1024^2) 
@@ -49,8 +51,14 @@ ui <- fluidPage(
                      tabPanel("Diagnostic Plot",
                               plotOutput("varDiagPlot"),
                               plotOutput("zeroDiagPlot")),
-                     tabPanel("Heatmap"),
-                     tabPanel("PCA")
+                     tabPanel("Heatmap",
+                              plotOutput("heatmapDiagPlot")),
+                     tabPanel("PCA",
+                              radioButtons("pc_components", "Select Principal Components:",
+                                           choices = c("PC1 vs PC2",
+                                                          "PC1 vs PC3",
+                                                          "PC2 vs PC3")),
+                              plotOutput("pca_plot"))
                    )),
           tabPanel("DE", "content")
         )
@@ -243,6 +251,73 @@ server <- function(input, output, session) {
     return(plot_variance)
   }
   
+  ### define a function that produces a heatmap based on slider var and nonzero values ###
+  create_clustered_heatmap <- function(filtered_data, min_variance_percentile, min_nonzero_samples) {
+    # filter genes based on the minimum percentile of variance
+    variance_threshold <- quantile(apply(filtered_data[-1], 1, var, na.rm = TRUE), min_variance_percentile / 100, na.rm = TRUE)
+    selected_genes <- which(apply(filtered_data[-1], 1, var, na.rm = TRUE) >= variance_threshold)
+    # filter genes based on the minimum number of non-zero samples
+    non_zero_samples <- apply(filtered_data[-1] != 0, 1, sum, na.rm = TRUE)
+    selected_genes <- intersect(selected_genes, which(non_zero_samples >= min_nonzero_samples))
+    # extract the selected data
+    selected_data <- filtered_data[selected_genes, ]
+    # subset the numeric matrix (excluding the first column, assuming it contains sample IDs)
+    numeric_matrix <- as.matrix(selected_data[, -1])
+    # log-transform the counts
+    log_transformed_data <- log1p(numeric_matrix)  # log1p to handle zeros
+    # create a clustered heatmap
+    pheatmap(
+      log_transformed_data,
+      cluster_rows = TRUE,
+      cluster_cols = TRUE,
+      scale = "row",
+      col = colorRampPalette(c("white", "blue"))(50),
+      main = "Clustered Heatmap",
+      show_rownames = FALSE,  # remove row labels
+      fontsize_row = 8,       # adjust font size of the row labels
+      fontsize_col = 8        # adjust font size of the column labels
+    )
+  }
+  
+  ### define a function to produce the pca plot ###
+  plot_pca <- function(data, pc_components) {
+    # set genes as the row names
+    rownames(data) <- data[, 1]
+    data <- data[, -1]
+    # transpose the data
+    transposed_data <- t(data)
+    # perform PCA
+    pc <- prcomp(transposed_data)
+    # define components based on user input
+    if (pc_components == "PC1 vs PC2") {
+      pc_components <- c(1, 2)
+    } else if (pc_components == "PC1 vs PC3") {
+      pc_components <- c(1, 3)
+    } else if (pc_components == "PC2 vs PC3") {
+      pc_components <- c(2, 3)
+    } else {
+      stop("Invalid PCA option")
+    }
+    # create PCA results data frame
+    pca_results <- data.frame(pc$x[, pc_components])
+    pca_results$sample_ID <- rownames(pc$x)
+    # extract sample type from sample_ID
+    pca_results$sample_type <- ifelse(grepl("^H_", pca_results$sample_ID), "Huntingtons", "Control")
+    # calculate the percentage of variance explained by each selected component
+    pc_var_percent <- pc$sdev[pc_components]^2 / sum(pc$sdev^2) * 100
+    # create scatter plot
+    pca_plot <- ggplot(pca_results, aes(x = !!sym(paste0("PC", pc_components[1])),
+                                      y = !!sym(paste0("PC", pc_components[2])),
+                                      color = sample_type)) + # color by treat vs control
+      geom_point() +
+      labs(
+        x = paste("PC", pc_components[1], " (", round(pc_var_percent[1], 2), "% variance)"),
+        y = paste("PC", pc_components[2], " (", round(pc_var_percent[2], 2), "% variance)")
+      )
+    
+    return(pca_plot)
+  }
+  
   # THESE ARE THE RENDER OUTPUT FUNCTIONS #
   output$sampleTable <- renderTable({
     dataf <- load_sample_data()
@@ -299,6 +374,16 @@ server <- function(input, output, session) {
   output$zeroDiagPlot <- renderPlot({
     dataf <- load_count_data()
     create_zeros_plot(dataf, input$nonzeroSlider)
+  })
+  
+  output$heatmapDiagPlot <- renderPlot({
+    dataf <- load_count_data()
+    create_clustered_heatmap(dataf, input$varianceSlider, input$nonzeroSlider)
+  })
+  
+  output$pca_plot <- renderPlot({
+    datac <- load_count_data()
+    plot_pca(datac, input$pc_components)
   })
 }
 # Run the application
