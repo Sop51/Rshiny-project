@@ -19,48 +19,46 @@ options(shiny.maxRequestSize=30*1024^2)
 
 # UI FOR THE APPLICATION DEFINED HERE #
 ui <- fluidPage(
-  tabsetPanel(
-    sidebarLayout(
-      sidebarPanel(
-        fileInput(inputId = "uploadedSampleFile", label = "Upload a file containing sample information:"),
-        fileInput(inputId = "uploadedCountsFile", label = "Upload a file containing counts information:"),
-        sliderInput("varianceSlider", "Variance Percentile Threshold", min = 0, max = 100, value = 50),
-        sliderInput("nonzeroSlider", "Min Non-Zero Samples", min = 0, max = 100, value = 10)
-      ),
-      mainPanel(
-        tabsetPanel(
-          tabPanel("Samples",
-                   tabsetPanel(
-                     tabPanel("Summary", 
-                              tableOutput("sampleTable")),
-                     tabPanel("Table", 
-                              radioButtons("filterChoice", "Choose Sample Data to View",
-                                           choices = c("Control", "Huntington's")),
-                              tableOutput("sampleFilteredTable")),
-                     tabPanel("Plots", 
-                              radioButtons("samplePlotChoice", "Choose Sample Information to View",
+  sidebarLayout(
+    sidebarPanel(
+      fileInput(inputId = "uploadedSampleFile", label = "Upload a file containing sample information:"),
+      fileInput(inputId = "uploadedCountsFile", label = "Upload a file containing counts information:"),
+      sliderInput("varianceSlider", "Variance Percentile Threshold", min = 0, max = 100, value = 50),
+      sliderInput("nonzeroSlider", "Min Non-Zero Samples", min = 0, max = 100, value = 10)
+    ),
+    mainPanel(
+      tabsetPanel(
+        tabPanel(
+          "Samples",
+          tabsetPanel(
+            tabPanel("Summary", tableOutput("sampleTable")),
+            tabPanel("Table", radioButtons("filterChoice", "Choose Sample Data to View", choices = c("Control", "Huntington's")),
+                     tableOutput("sampleFilteredTable")),
+            tabPanel("Plots", radioButtons("samplePlotChoice", "Choose Sample Information to View",
                                            choices = c("PMI","age_of_death", "RIN", "age_of_onset",
                                                        "duration", "CAG", "vonsattel_grade", "HV_striatal_score", "HV_cortical_score")),
-                              plotOutput("sampleHistogram"))
-                   )
-          ),
-          tabPanel("Counts",
-                   tabsetPanel(
-                     tabPanel("Filter Information",
-                              tableOutput("countsFilteredTable")),
-                     tabPanel("Diagnostic Plot",
-                              plotOutput("varDiagPlot"),
-                              plotOutput("zeroDiagPlot")),
-                     tabPanel("Heatmap",
-                              plotOutput("heatmapDiagPlot")),
-                     tabPanel("PCA",
-                              radioButtons("pc_components", "Select Principal Components:",
-                                           choices = c("PC1 vs PC2",
-                                                          "PC1 vs PC3",
-                                                          "PC2 vs PC3")),
-                              plotOutput("pca_plot"))
-                   )),
-          tabPanel("DE", "content")
+                     plotOutput("sampleHistogram"))
+          )
+        ),
+        tabPanel(
+          "Counts",
+          tabsetPanel(
+            tabPanel("Filter Information", tableOutput("countsFilteredTable")),
+            tabPanel("Diagnostic Plot", plotOutput("varDiagPlot"), plotOutput("zeroDiagPlot")),
+            tabPanel("Heatmap", plotOutput("heatmapDiagPlot")),
+            tabPanel("PCA", radioButtons("pc_components", "Select Principal Components:",
+                                         choices = c("PC1 vs PC2", "PC1 vs PC3", "PC2 vs PC3")),
+                     plotOutput("pca_plot"))
+          )
+        ),
+        tabPanel(
+          "DE",
+          tabsetPanel(
+            tabPanel("Differential Expression Results",
+              sidebarPanel(sliderInput("threshold", "Choose a P-Value Threshold", min = 0, max = 0.5, value = 0.05, step = 0.001)),
+              mainPanel(tableOutput("detable"))
+            )
+          )
         )
       )
     )
@@ -70,7 +68,7 @@ ui <- fluidPage(
 
 # SERVER LOGIC DEFINED HERE #
 server <- function(input, output, session) {
-  
+
   ### Define a function that reads in the sample data ###
   load_sample_data <- reactive({
     req(input$uploadedSampleFile)
@@ -123,6 +121,12 @@ server <- function(input, output, session) {
     # selected the required samples
     selected_df <- df %>% select(one_of(samples))
     return(selected_df)
+  })
+  
+  ### define a function that loads in the DE data ###
+  load_de_data <- reactive({
+    data <- read.table('/Users/sophiemarcotte/Desktop/GSE64810_mlhd_DESeq2_diffexp_DESeq2_outlier_trimmed_adjust.txt', header = TRUE, sep = "\t")
+    return(data)
   })
   
   ### Define a function that returns the summary table for each column ###
@@ -318,6 +322,11 @@ server <- function(input, output, session) {
     return(pca_plot)
   }
   
+  ### define a plot to filter the DE results based on a threshold
+  filter_de_data <- function(data, threshold) {
+    filter(data, padj <= threshold)
+  }
+  
   # THESE ARE THE RENDER OUTPUT FUNCTIONS #
   output$sampleTable <- renderTable({
     dataf <- load_sample_data()
@@ -384,6 +393,11 @@ server <- function(input, output, session) {
   output$pca_plot <- renderPlot({
     datac <- load_count_data()
     plot_pca(datac, input$pc_components)
+  })
+  
+  output$detable <- renderTable({
+    dataf <- load_de_data()
+    filter_de_data(dataf, input$threshold)
   })
 }
 # Run the application
