@@ -73,11 +73,12 @@ ui <- fluidPage(
           textAreaInput("geneInput", "Enter Gene Names (one per line):", rows = 10),
           tabsetPanel(
             tabPanel("Clustered Heatmap",
-                     actionButton("plotButton", "Plot Heatmap"),
+                     actionButton("plotHeatmapButton", "Plot Heatmap"),
                      plotOutput("corrHeatmapPlot")
                      ),
             tabPanel("Visualization",
                      sliderInput("minCorr", "Min Correlation for Drawing an Edge", min = 0, max = 1, value = 0.05),
+                     actionButton("plotCorrButton", "Plot Correlation Graph"),
                      plotOutput("networkPlot")
             ),
             tabPanel("Metrics",
@@ -562,15 +563,17 @@ server <- function(input, output, session) {
   })
   
   output$corrHeatmapPlot <- renderPlot({
-    if (input$plotButton > 0) {
+    if (input$plotHeatmapButton > 0) {
       dataf <- corr_filtered_data()
       plot_corrHeatmap(dataf)
     }
   })
   
   output$networkPlot <- renderPlot({
-    dataf <- corr_filtered_data()
-    correlation_matrix_viz(dataf)
+    if (input$plotCorrButton > 0 ){
+      dataf <- corr_filtered_data()
+      correlation_matrix_viz(dataf)
+    }
   })
   
   output$networkStatsTable <- renderTable({
