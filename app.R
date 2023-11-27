@@ -13,6 +13,7 @@ library(dplyr)
 library(tidyr)
 library(DESeq2)
 library(pheatmap)
+library(igraph)
 
 # increase the shiny upload size option for the counts data
 options(shiny.maxRequestSize=30*1024^2) 
@@ -61,10 +62,27 @@ ui <- fluidPage(
             tabPanel("Differential Expression Plots",
                      p("Adjusted P-Values From DESeq2 Results"),
                      plotOutput("plotPval"),
-                     p("Log2FC Values From Genes Significant at Padj Threshold of 0.1"),
+                     p("Log2FC Values of Genes Significant at Padj Threshold of 0.1"),
                      plotOutput("log2FCplot"),
                      p("Log2foldchange vs -log10(padj), Labeled by Status"),
                      plotOutput("volcanoPlot"))
+          )
+        ),
+        tabPanel(
+          "Correlation Network Analysis",
+          textAreaInput("geneInput", "Enter Gene Names (one per line):", rows = 10),
+          tabsetPanel(
+            tabPanel("Clustered Heatmap",
+                     actionButton("plotButton", "Plot Heatmap"),
+                     plotOutput("corrHeatmapPlot")
+                     ),
+            tabPanel("Visualization",
+                     sliderInput("minCorr", "Min Correlation for Drawing an Edge", min = 0, max = 1, value = 0.05),
+                     plotOutput("networkPlot")
+            ),
+            tabPanel("Metrics",
+                     tableOutput("networkStatsTable")
+            )
           )
         )
       )
@@ -91,7 +109,7 @@ server <- function(input, output, session) {
     return(df)
   })
   
-  ### Define a function that reads in the counts data + normalizes ###
+  ### Define a function that reads in the counts data (BA9) ###
   load_count_data <- reactive({
     req(input$uploadedSampleFile)
     # read in the sample data
@@ -132,8 +150,25 @@ server <- function(input, output, session) {
   
   ### define a function that loads in the DE data ###
   load_de_data <- reactive({
-    data <- read.table('/Users/sophiemarcotte/Desktop/GSE64810_mlhd_DESeq2_diffexp_DESeq2_outlier_trimmed_adjust.txt', header = TRUE, sep = "\t")
+    data <- read.table('/Users/sophiemarcotte/Desktop/deseq2_results.txt', header = TRUE, sep = "\t")
     return(data)
+  })
+  
+  ### load corr data and filter ###
+  corr_filtered_data <- reactive({
+      data <- load_count_data()
+      # check if the input is not NULL
+      if (!is.null(input$geneInput)) {
+        # split the input into a vector of gene names
+        selected_genes <- strsplit(input$geneInput, "\n", fixed = TRUE)[[1]]
+        # remove any leading or trailing whitespace
+        selected_genes <- trimws(selected_genes)
+        # filter data based on selected genes
+        subset_data <- data[data$gene %in% selected_genes, ]
+        return(subset_data)
+      }else {
+        return(NULL)
+      }
   })
   
   ### Define a function that returns the summary table for each column ###
@@ -372,6 +407,71 @@ server <- function(input, output, session) {
     return(p)
   }
   
+  ### define a function to create a heatmap for corr analysis ###
+  plot_corrHeatmap <- function(dataf){
+    rownames(dataf) <- dataf[, 1]
+    # Remove the first column (as it's now the row names)
+    dataf <- dataf[, -1]
+    dataf <- as.matrix(dataf)
+    # log-transform the counts
+    log_transformed_data <- log1p(dataf)  # log1p to handle zeros
+    # create a clustered heatmap
+    pheatmap(
+      log_transformed_data,
+      cluster_rows = TRUE,
+      cluster_cols = TRUE,
+      scale = "row",
+      col = colorRampPalette(c("white", "blue"))(50),
+      main = "Clustered Heatmap",
+      show_rownames = TRUE,
+      fontsize_row = 8,       # adjust font size of the row labels
+      fontsize_col = 8)        # adjust font size of the column labels
+  }
+  
+  ### define a function to compute the correlation matrix and vizualize with a graph ###
+  correlation_matrix_viz <- function(selected_genes){
+    # set first col as rownames
+    rownames(selected_genes) <- selected_genes[, 1]
+    # Remove the first column (as it's now the row names)
+    selected_genes <- selected_genes[, -1]
+    # calculate the correlation matrix
+    cor_matrix <- cor(t(selected_genes))
+    # filter the correlation matrix based on the threshold
+    filtered_correlation_matrix <- ifelse(abs(cor_matrix) >= input$minCorr, cor_matrix, NA)
+    # create the igraph object
+    graph <- graph_from_adjacency_matrix(filtered_correlation_matrix, mode = "undirected", weighted = TRUE)
+    # plot the network
+    plot(graph, 
+         vertex.color = "lightblue",    # vertex color
+         vertex.label.cex = 0.8,        # vertex label size
+         vertex.label.color = "black",  # vertex label color
+         edge.arrow.size = 0.5,         # edge arrow size
+         layout = layout_with_fr)       # graph layout
+  }
+  
+  ### define a function to calculate metrics calculated for each gene in the input ###
+  corr_matrix_metrics <- function(selected_genes){
+    # set first col as rownames
+    rownames(selected_genes) <- selected_genes[, 1]
+    # Remove the first column (as it's now the row names)
+    selected_genes <- selected_genes[, -1]
+    # calculate the correlation matrix
+    cor_matrix <- cor(t(selected_genes))
+    # create the igraph object
+    graph <- graph_from_adjacency_matrix(cor_matrix, mode = "undirected", weighted = TRUE)
+    # calculate degree, closeness centrality, and betweenness centrality
+    degree_values <- degree(graph)
+    closeness_values <- closeness(graph)
+    betweenness_values <- betweenness(graph)
+    # create a data frame with the results
+    results_table <- data.frame(
+      Gene = V(graph)$name,
+      Degree = degree_values,
+      Closeness = closeness_values,
+      Betweenness = betweenness_values
+    )
+    return(results_table)
+  }
   
   # THESE ARE THE RENDER OUTPUT FUNCTIONS #
   output$sampleTable <- renderTable({
@@ -459,6 +559,23 @@ server <- function(input, output, session) {
   output$volcanoPlot <- renderPlot({
     dataf <- load_de_data()
     plot_volcano(dataf)
+  })
+  
+  output$corrHeatmapPlot <- renderPlot({
+    if (input$plotButton > 0) {
+      dataf <- corr_filtered_data()
+      plot_corrHeatmap(dataf)
+    }
+  })
+  
+  output$networkPlot <- renderPlot({
+    dataf <- corr_filtered_data()
+    correlation_matrix_viz(dataf)
+  })
+  
+  output$networkStatsTable <- renderTable({
+    dataf <- corr_filtered_data()
+    corr_matrix_metrics(dataf)
   })
 }
 # Run the application
