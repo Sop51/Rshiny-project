@@ -22,9 +22,7 @@ ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
       fileInput(inputId = "uploadedSampleFile", label = "Upload a file containing sample information:"),
-      fileInput(inputId = "uploadedCountsFile", label = "Upload a file containing counts information:"),
-      sliderInput("varianceSlider", "Variance Percentile Threshold", min = 0, max = 100, value = 50),
-      sliderInput("nonzeroSlider", "Min Non-Zero Samples", min = 0, max = 100, value = 10)
+      fileInput(inputId = "uploadedCountsFile", label = "Upload a file containing counts information:")
     ),
     mainPanel(
       tabsetPanel(
@@ -42,6 +40,8 @@ ui <- fluidPage(
         ),
         tabPanel(
           "Counts",
+          sliderInput("varianceSlider", "Variance Percentile Threshold", min = 0, max = 100, value = 50),
+          sliderInput("nonzeroSlider", "Min Non-Zero Samples", min = 0, max = 100, value = 10),
           tabsetPanel(
             tabPanel("Filter Information", tableOutput("countsFilteredTable")),
             tabPanel("Diagnostic Plot", plotOutput("varDiagPlot"), plotOutput("zeroDiagPlot")),
@@ -55,12 +55,15 @@ ui <- fluidPage(
           "DE",
           tabsetPanel(
             tabPanel("Differential Expression Results",
-              sidebarPanel(sliderInput("threshold", "Choose a P-Value Threshold", min = 0, max = 0.5, value = 0.05, step = 0.001)),
-              mainPanel(tableOutput("detable"))
+                     sidebarPanel(sliderInput("threshold", "Choose a P-Value Threshold", min = 0, max = 0.5, value = 0.05, step = 0.001)),
+                     mainPanel(tableOutput("detable"))
             ),
             tabPanel("Differential Expression Plots",
+                     p("Adjusted P-Values From DESeq2 Results"),
                      plotOutput("plotPval"),
+                     p("Log2FC Values From Genes Significant at Padj Threshold of 0.1"),
                      plotOutput("log2FCplot"),
+                     p("Log2foldchange vs -log10(padj), Labeled by Status"),
                      plotOutput("volcanoPlot"))
           )
         )
