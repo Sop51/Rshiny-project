@@ -57,7 +57,11 @@ ui <- fluidPage(
             tabPanel("Differential Expression Results",
               sidebarPanel(sliderInput("threshold", "Choose a P-Value Threshold", min = 0, max = 0.5, value = 0.05, step = 0.001)),
               mainPanel(tableOutput("detable"))
-            )
+            ),
+            tabPanel("Differential Expression Plots",
+                     plotOutput("plotPval"),
+                     plotOutput("log2FCplot"),
+                     plotOutput("volcanoPlot"))
           )
         )
       )
@@ -327,6 +331,45 @@ server <- function(input, output, session) {
     filter(data, padj <= threshold)
   }
   
+  ### create a plot that plots the pvals of the DE results ###
+  plot_pvals <- function(dataf) {
+    p <- ggplot(dataf, aes(x=padj)) + 
+      theme_classic() +
+      geom_histogram()
+    return(p)
+  }
+  
+  ### create a plot that plots the log2foldchange of DE results ###
+  plot_log2fc <- function(dataf) {
+    dataf <- dataf %>%
+      mutate(volc_plot_status = case_when(
+        padj < 0.1 & log2FoldChange > 0 ~ "UP",
+        padj < 0.1 & log2FoldChange < 0 ~ "DOWN",
+        TRUE ~ "NS"
+      ))
+    plot_sig <- dataf[dataf$volc_plot_status != 'NS',]
+    p <- ggplot(plot_sig, aes(x=log2FoldChange)) + 
+      theme_classic() +
+      geom_histogram()
+    return(p)
+  }
+  
+  ### create a volcano plot of the DE results ###
+  plot_volcano <- function(dataf) {
+    dataf <- dataf %>%
+      mutate(log10neg = -log10(padj))
+    dataf <- dataf %>%
+      mutate(Status = case_when(
+        log2FoldChange > 0.5 ~ "Up",
+        log2FoldChange < -0.5 ~ "Down",
+        TRUE ~ "Not Significant"
+      ))
+    p <- ggplot(dataf, aes(x=log2FoldChange, y=log10neg, color=Status)) +
+      geom_point()
+    return(p)
+  }
+  
+  
   # THESE ARE THE RENDER OUTPUT FUNCTIONS #
   output$sampleTable <- renderTable({
     dataf <- load_sample_data()
@@ -398,6 +441,21 @@ server <- function(input, output, session) {
   output$detable <- renderTable({
     dataf <- load_de_data()
     filter_de_data(dataf, input$threshold)
+  })
+  
+  output$plotPval <- renderPlot({
+    dataf <- load_de_data()
+    plot_pvals(dataf)
+  })
+  
+  output$log2FCplot <- renderPlot({
+    dataf <- load_de_data()
+    plot_log2fc(dataf)
+  })
+  
+  output$volcanoPlot <- renderPlot({
+    dataf <- load_de_data()
+    plot_volcano(dataf)
   })
 }
 # Run the application
