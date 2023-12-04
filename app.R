@@ -14,12 +14,14 @@ library(tidyr)
 library(DESeq2)
 library(pheatmap)
 library(igraph)
+library(shinythemes)
+library(shinycssloaders)
 
 # increase the shiny upload size option for the counts data
 options(shiny.maxRequestSize=30*1024^2) 
 
 # UI FOR THE APPLICATION DEFINED HERE #
-ui <- fluidPage(
+ui <- fluidPage(theme = shinytheme("sandstone"),
   sidebarLayout(
     sidebarPanel(
       fileInput(inputId = "uploadedSampleFile", label = "Upload a file containing sample information:"),
@@ -45,8 +47,9 @@ ui <- fluidPage(
           sliderInput("nonzeroSlider", "Min Non-Zero Samples", min = 0, max = 100, value = 10),
           tabsetPanel(
             tabPanel("Filter Information", tableOutput("countsFilteredTable")),
-            tabPanel("Diagnostic Plot", plotOutput("varDiagPlot"), plotOutput("zeroDiagPlot")),
-            tabPanel("Heatmap", plotOutput("heatmapDiagPlot")),
+            tabPanel("Diagnostic Plot", withSpinner(plotOutput("varDiagPlot"), type=8, color="black"), 
+                     withSpinner(plotOutput("zeroDiagPlot"), type=8, color="black")),
+            tabPanel("Heatmap", withSpinner(plotOutput("heatmapDiagPlot"), type=8, color="black")),
             tabPanel("PCA", radioButtons("pc_components", "Select Principal Components:",
                                          choices = c("PC1 vs PC2", "PC1 vs PC3", "PC2 vs PC3")),
                      plotOutput("pca_plot"))
@@ -74,7 +77,7 @@ ui <- fluidPage(
           tabsetPanel(
             tabPanel("Clustered Heatmap",
                      actionButton("plotHeatmapButton", "Plot Heatmap"),
-                     plotOutput("corrHeatmapPlot")
+                     withSpinner(plotOutput("corrHeatmapPlot"), type=8, color="black")
                      ),
             tabPanel("Visualization",
                      sliderInput("minCorr", "Min Correlation for Drawing an Edge", min = 0, max = 1, value = 0.05),
