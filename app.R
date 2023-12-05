@@ -261,21 +261,27 @@ server <- function(input, output, session) {
     non_zero_samples <- apply(filtered_data[-1] != 0, 1, sum, na.rm = TRUE)
     # filter genes based on the minimum number of non-zero samples
     selected_genes <- which(non_zero_samples >= min_nonzero_samples)
-    # create a data frame for the plot
+    
+    # create a data frame for the plot with a column indicating if the gene passed the filter
     plot_data <- data.frame(
-      MedianCount = median_count[selected_genes],
-      Zeros = apply(filtered_data[selected_genes, -1] == 0, 1, sum, na.rm = TRUE),
+      MedianCount = median_count,
+      Zeros = apply(filtered_data[-1] == 0, 1, sum, na.rm = TRUE),
+      PassedFilter = ifelse(1:length(median_count) %in% selected_genes, "Yes", "No"),
       stringsAsFactors = FALSE
     )
+    
     # create the scatter plot
-    plot_zeros <- ggplot(plot_data, aes(x = Zeros, y = log(MedianCount))) +
+    plot_zeros <- ggplot(plot_data, aes(x = Zeros, y = log(MedianCount), color = PassedFilter)) +
       geom_point() +
+      scale_color_manual(values = c("Yes" = "darkblue", "No" = "lightblue")) +
       labs(title = "Median Count vs Number of Zeros",
            x = "Number of Zeros",
            y = "Log(Median Count)")
+    
     # return the plot
     return(plot_zeros)
   }
+  
   
   ### define a function that creates a diagnostic plot for variance filter ###
   create_variance_plot <- function(filtered_data, min_variance_percentile) {
@@ -285,21 +291,27 @@ server <- function(input, output, session) {
     variance_threshold <- quantile(apply(filtered_data[-1], 1, var, na.rm = TRUE), min_variance_percentile / 100, na.rm = TRUE)
     # filter genes based on the minimum percentile of variance
     selected_genes <- which(apply(filtered_data[-1], 1, var, na.rm = TRUE) >= variance_threshold)
-    # create a data frame for the plot
+    
+    # create a data frame for the plot with a column indicating if the gene passed the filter
     plot_data <- data.frame(
-      MedianCount = median_count[selected_genes],
-      Variance = apply(filtered_data[selected_genes, -1], 1, var, na.rm = TRUE),
+      MedianCount = median_count,
+      Variance = apply(filtered_data[-1], 1, var, na.rm = TRUE),
+      PassedFilter = ifelse(1:length(median_count) %in% selected_genes, "Yes", "No"),
       stringsAsFactors = FALSE
     )
+    
     # create the scatter plot
-    plot_variance <- ggplot(plot_data, aes(x = log(Variance), y = log(MedianCount))) +
+    plot_variance <- ggplot(plot_data, aes(x = log(Variance), y = log(MedianCount), color = PassedFilter)) +
       geom_point() +
       labs(title = "Median Count vs Variance",
            x = "Log(Variance)",
            y = "Log(Median Count)")
+    
     # return the plot
     return(plot_variance)
   }
+  
+  
   
   ### define a function that produces a heatmap based on slider var and nonzero values ###
   create_clustered_heatmap <- function(filtered_data, min_variance_percentile, min_nonzero_samples) {
